@@ -79,9 +79,11 @@ class UpdateOutput:
 class Gencore:
     def __init__(self, path: Path | None = None):
         self.path: Path = Path(BASE_PATH) / "gencore" if path is None else path
+        self.env_vars: dict[str, str] = os.environ.copy()
+        self.env_vars["RUST_BACKTRACE"] = "1"
 
     def call(self, args: list[str]) -> str:
-        process = subprocess.run([str(self.path)] + args, capture_output=True)
+        process = subprocess.run([str(self.path)] + args, capture_output=True, env=self.env_vars)
         print(process.stderr.decode())
         process.check_returncode()
         return process.stdout.decode()
