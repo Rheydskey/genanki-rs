@@ -51,38 +51,42 @@ struct TopLevel {
 }
 
 #[must_use]
-pub fn init(init: &Init) -> String {
+pub fn init(init: &Init) -> anyhow::Result<String> {
     let git = std::process::Command::new("git")
         .args(["clone", "--depth", "1", &init.repo, &init.output_folder])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .unwrap();
-    eprintln!("{}", String::from_utf8(git.stdout).unwrap());
-    eprintln!("{}", String::from_utf8(git.stderr).unwrap());
+        .output()?;
+    eprintln!("{}", String::from_utf8(git.stdout)?);
+    eprintln!("{}", String::from_utf8(git.stderr)?);
     let mut decks: HashMap<String, Vec<Card>> = HashMap::new();
-    for path in std::fs::read_dir(&init.output_folder).unwrap() {
+    for path in std::fs::read_dir(&init.output_folder)? {
         let Ok(path) = path else {
             continue;
         };
 
-        if path.file_type().unwrap().is_dir() {
-            let name = path.file_name().into_string().unwrap();
-            if name.starts_with('.') {
-                continue;
-            }
-            decks.insert(
-                name,
-                Generator::generate_card_from_folder(path.path().as_path()),
-            );
+        if !path.file_type()?.is_dir() {
+            continue;
         }
+
+        let Ok(name) = path.file_name().into_string() else {
+            continue;
+        };
+
+        if name.starts_with('.') {
+            continue;
+        }
+        decks.insert(
+            name,
+            Generator::generate_card_from_folder(path.path().as_path()),
+        );
     }
 
-    serde_json::to_string(&InitOutput { decks }).unwrap()
+    Ok(serde_json::to_string(&InitOutput { decks })?)
 }
 
 #[must_use]
-pub fn update(update: &Update) -> String {
+pub fn update(update: &Update) -> anyhow::Result<String> {
     Updater::new(update.repo.clone()).generate()
 }
 
@@ -93,5 +97,8 @@ fn main() {
         SubcommandEnum::Update(u) => update(&u),
     };
 
-    print!("{output}");
+    match output {
+        Ok(output_str) => print!("{output_str}"),
+        Err(err) => eprintln!("{err}"),
+    }
 }

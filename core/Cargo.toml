@@ -3,6 +3,14 @@ name = "gencore"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+
 [dependencies]
 html-escape = "0.2.13" # Add a dep to correct a dep, we live in a beautiful world
 markdown = "1.0.0"

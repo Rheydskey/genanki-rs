@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import hashlib
 import json
 import subprocess
-import sys
 import os
 from typing import Any
 from pathlib import Path
@@ -13,8 +12,6 @@ from aqt import mw
 from aqt import gui_hooks
 from aqt.operations import QueryOp
 
-sys.path.insert(0, str(Path(os.path.dirname(__file__)) / "libs"))
-
 BASE_PATH = Path(__file__).parent
 
 static_html = """
@@ -23,10 +20,8 @@ static_html = """
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous" onload="renderMathInElement(document.body);"></script>
 """
 
-col = mw.col
 ext_pwd = Path(os.path.dirname(__file__))
-card_folder = ext_pwd / "cards/"
-git_repo = "https://git.rheydskey.org/rheydskey/anki-md"
+git_repo: str = "https://git.rheydskey.org/rheydskey/l3-anki-md.git"
 
 
 def folder_name(url: str) -> str:
@@ -40,7 +35,7 @@ class Card:
     hash: str
 
     @staticmethod
-    def fromJson(json: dict[str, str]) -> "Card":
+    def from_json(json: dict[str, str]) -> "Card":
         return Card(json["front"], json["back"], json["hash"])
 
 
@@ -48,16 +43,37 @@ class Card:
 class InitOutput:
     decks: dict[str, list[Card]]
 
+    @staticmethod
+    def from_json(json_data: dict[str, Any]) -> "InitOutput":
+        decks: dict[str, list[Card]] = {}
+        for deck_name, cards_data in json_data["decks"].items():
+            decks[deck_name] = [Card.from_json(card_data) for card_data in cards_data]
+        return InitOutput(decks)
+
 
 @dataclass
 class DiffOutput:
     added: list[Card]
     deleted: list[str]
 
+    @staticmethod
+    def from_json(json_data: dict[str, Any]) -> "DiffOutput":
+        return DiffOutput(
+            added=[Card.from_json(card_data) for card_data in json_data["added"]],
+            deleted=json_data["deleted"],
+        )
+
 
 @dataclass
 class UpdateOutput:
-    decks: dict[str, list[DiffOutput]]
+    decks: dict[str, DiffOutput]
+
+    @staticmethod
+    def from_json(json_data: dict[str, Any]) -> "UpdateOutput":
+        decks: dict[str, DiffOutput] = {}
+        for deck_name, diff_data in json_data["decks"].items():
+            decks[deck_name] = DiffOutput.from_json(diff_data)
+        return UpdateOutput(decks)
 
 
 class Gencore:
@@ -114,7 +130,6 @@ def add_cards(col: Collection, deck_id: DeckId, cards: list[Card]):
 def delete_cards(col: Collection, did: DeckId, hashes: list[str]):
     for hash in hashes:
         query = f"did:{did} hash:{hash}"
-        print(f"deleted in ({did})", list(col.find_cards(query)))
         col.remove_notes_by_card(list(col.find_cards(query)))
 
 
@@ -129,40 +144,48 @@ def create_or_get_deck_for_name(col: Collection, deck_name: str) -> DeckId:
     return deckid
 
 
-def manage_card(col: Collection) -> int:
-    gencore = Gencore()
+class Repository:
+    def __init__(self, url: str, col: Collection):
+        self.url: str = url
+        self.gencore: Gencore = Gencore()
+        self.collection: Collection = col
 
-    if "Ankill" not in [n.name for n in col.models.all_names_and_ids()]:
-        col.models.save(create_model())
+    def manage(self) -> int:
+        if "Ankill" not in [n.name for n in self.collection.models.all_names_and_ids()]:
+            self.collection.models.save(create_model())
 
-    if not Path(folder_name(git_repo)).exists():
-        i = gencore.init(git_repo)
-        l = json.loads(i)
-        decks: dict[str, list[object]] = l["decks"].items()
-        for name, cards in decks:
-            deckid = create_or_get_deck_for_name(col, name)
+        if not Path(folder_name(git_repo)).exists():
+            self._create()
+        else:
+            self._update()
+
+        return 0
+
+    def _create(self) -> None:
+        i = self.gencore.init(self.url)
+        decks = InitOutput.from_json(json.loads(i))
+        for name, cards in decks.decks.items():
+            deckid = create_or_get_deck_for_name(self.collection, name)
             add_cards(
-                col,
+                self.collection,
                 deckid,
-                list(map(Card.fromJson, cards)),
+                cards,
             )
 
-    else:
-        input = gencore.update(folder_name(git_repo))
+    def _update(self) -> None:
+        input = self.gencore.update(folder_name(git_repo))
         if input == "":
-            return 0
+            return
 
-        decks: dict[str, Any] = dict(json.loads(input)["decks"])
-        for name, diff in decks.items():
-            deckid = create_or_get_deck_for_name(col, name)
-            delete_cards(col, deckid, diff["deleted"])
+        decks: UpdateOutput = UpdateOutput.from_json(json.loads(input))
+        for name, diff in decks.decks.items():
+            deckid = create_or_get_deck_for_name(self.collection, name)
+            delete_cards(self.collection, deckid, diff.deleted)
             add_cards(
-                col,
+                self.collection,
                 deckid,
-                list(map(Card.fromJson, diff["added"])),
+                diff.added,
             )
-
-    return 0
 
 
 def init() -> None:
@@ -172,7 +195,7 @@ def init() -> None:
 
     op = QueryOp(
         parent=mw,
-        op=manage_card,
+        op=lambda col: Repository(git_repo, col).manage(),
         success=lambda e: None,
     )
 

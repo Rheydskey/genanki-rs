@@ -42,7 +42,7 @@ impl CardGenerator {
         Self(input)
     }
 
-    fn to_html(input: &str) -> String {
+    fn to_html(input: &str) -> anyhow::Result<String> {
         let option = &Options {
             parse: markdown::ParseOptions {
                 constructs: markdown::Constructs {
@@ -59,18 +59,19 @@ impl CardGenerator {
             },
         };
 
-        html_escape::decode_html_entities(&markdown::to_html_with_options(input, option).unwrap())
-            .into_owned()
+        let html =
+            markdown::to_html_with_options(input, option).map_err(|f| anyhow::anyhow!("{f}"))?;
+        Ok(html_escape::decode_html_entities(&html).into_owned())
     }
 
-    fn transform_to_html(card: Card) -> Card {
-        let front = Self::to_html(&card.front);
-        let back = Self::to_html(&card.back);
-        Card {
+    fn transform_to_html(card: Card) -> anyhow::Result<Card> {
+        let front = Self::to_html(&card.front)?;
+        let back = Self::to_html(&card.back)?;
+        Ok(Card {
             front,
             back,
             ..card
-        }
+        })
     }
 
     fn generate_hash(&self) -> String {
@@ -79,8 +80,10 @@ impl CardGenerator {
         hasher.finalize().to_hex().as_str().to_string()
     }
 
-    fn generate_extend(&self) -> Card {
-        let (front, back) = self.0.split_once('%').unwrap();
+    fn generate_extend(&self) -> anyhow::Result<Card> {
+        let Some((front, back)) = self.0.split_once('%') else {
+            return Err(anyhow::anyhow!("This card isn't extended"));
+        };
         Self::transform_to_html(Card {
             front: front.to_string(),
             back: back.to_string(),
@@ -88,7 +91,7 @@ impl CardGenerator {
         })
     }
 
-    fn generate_basic(&self) -> Card {
+    fn generate_basic(&self) -> anyhow::Result<Card> {
         let lines = self.0.lines().collect::<Vec<_>>();
         let front = lines[0].to_string();
         let back = lines[1..].join("\n");
@@ -104,7 +107,7 @@ impl CardGenerator {
         self.0.lines().any(|f| f.trim_end() == "%")
     }
 
-    pub fn generate(&self) -> Card {
+    pub fn generate(&self) -> anyhow::Result<Card> {
         if self.is_extends() {
             return self.generate_extend();
         }
@@ -122,6 +125,7 @@ impl Generator {
             .filter(|f| !f.is_empty())
             .map(|f| format!("##{}", f.trim_end()))
             .map(|f| CardGenerator::new(f).generate())
+            .flatten()
             .collect::<Vec<_>>()
     }
     pub fn generate_card_from_folder(path: &Path) -> Vec<Card> {
@@ -207,13 +211,15 @@ impl Updater {
         paths
     }
 
-    pub fn generate(&self) -> String {
-        let Ok((old, new)) = self.update() else {
-            return String::new();
-        };
+    pub fn generate(&self) -> anyhow::Result<String> {
+        let (old, new) = self.update()?;
 
-        let diff = self.get_diff(&old, &new).unwrap();
-        let patchs = gitpatch::Patch::from_multiple(&diff).unwrap();
+        let Some(diff) = self.get_diff(&old, &new) else {
+            return Err(anyhow::anyhow!("Cannot get a diff between {old} and {new}"));
+        };
+        let Ok(patchs) = gitpatch::Patch::from_multiple(&diff) else {
+            return Err(anyhow::anyhow!("Output diff is not correct"));
+        };
 
         let decks = patchs
             .iter()
@@ -247,16 +253,16 @@ impl Updater {
 
         for (deck, cards) in &decks_cards {
             let new_cards_hash: HashSet<String> = cards.iter().map(|f| f.hash.clone()).collect();
-            let deleted = old_cards
-                .get(deck)
-                .unwrap()
+            let Some(old_deck) = old_cards.get(deck) else {
+                continue;
+            };
+
+            let deleted = old_deck
                 .difference(&new_cards_hash)
                 .cloned()
                 .collect::<Vec<_>>();
 
-            let added_cards = new_cards_hash
-                .difference(old_cards.get(deck).unwrap())
-                .collect::<Vec<_>>();
+            let added_cards = new_cards_hash.difference(old_deck).collect::<Vec<_>>();
 
             let added: Vec<_> = cards
                 .iter()
@@ -269,6 +275,6 @@ impl Updater {
                 .insert(deck.clone(), DiffOutput { added, deleted });
         }
 
-        serde_json::to_string(&output).unwrap()
+        Ok(serde_json::to_string(&output)?)
     }
 }
