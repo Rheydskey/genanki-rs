@@ -53,7 +53,6 @@ class Card:
 
     def exists_in(self, did: DeckId, col: Collection) -> bool:
         query = f"hash:{self.hash} did:{did} "
-        print(query)
         return len(col.find_cards(query)) != 0
 
 
