@@ -51,6 +51,11 @@ class Card:
     def from_json(json: dict[str, str]) -> "Card":
         return Card(json["front"], json["back"], json["hash"])
 
+    def exists_in(self, did: DeckId, col: Collection) -> bool:
+        query = f"hash:{self.hash} did:{did} "
+        print(query)
+        return len(col.find_cards(query)) != 0
+
 
 @dataclass
 class InitOutput:
@@ -98,7 +103,9 @@ class Gencore:
         self.path.chmod(st.st_mode | stat.S_IEXEC)
 
     def call(self, args: list[str]) -> str:
-        process = subprocess.run([str(self.path)] + args, capture_output=True, env=self.env_vars)
+        process = subprocess.run(
+            [str(self.path)] + args, capture_output=True, env=self.env_vars
+        )
         print(process.stderr.decode())
         process.check_returncode()
         return process.stdout.decode()
@@ -137,6 +144,9 @@ def add_cards(col: Collection, deck_id: DeckId, cards: list[Card]):
         return
 
     for card in cards:
+        if card.exists_in(deck_id, col):
+            continue
+        
         note = col.new_note(model)
         note.fields[0] = card.front
         note.fields[1] = card.back
