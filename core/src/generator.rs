@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::anyhow;
 use gitpatch::Patch;
 use markdown::Options;
 
@@ -171,12 +172,8 @@ impl Updater {
             return Err(anyhow::anyhow!("Empty line"));
         };
 
-        let mut commit_range = words.split("..");
-        let Some(old) = commit_range.next() else {
-            return Err(anyhow::anyhow!("No old commit"));
-        };
-        let Some(new) = commit_range.next() else {
-            return Err(anyhow::anyhow!("No new commit"));
+        let Some((old, new)) = words.split_once("..") else {
+            return Err(anyhow!("Already update"));
         };
 
         Ok((old.to_string(), new.to_string()))
