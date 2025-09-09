@@ -119,8 +119,20 @@ impl CardGenerator {
 pub struct Generator;
 
 impl Generator {
+    fn skip_until_first_card(input: &str) -> &str {
+        let mut offset = 0;
+        for i in input.lines() {
+            if i.starts_with("##") {
+                break;
+            }
+
+            offset += i.len();
+        }
+
+        return &input[offset..];
+    }
     pub fn generate_card_from_input(input: &str) -> Vec<Card> {
-        input
+        Self::skip_until_first_card(input)
             .split("##")
             .filter(|f| !f.is_empty())
             .map(|f| format!("##{}", f.trim_end()))
