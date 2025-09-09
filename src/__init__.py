@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import hashlib
 import json
+import stat
 import subprocess
 import os
 from typing import Any
@@ -93,6 +94,8 @@ class Gencore:
         self.path: Path = Path(BASE_PATH) / "gencore" if path is None else path
         self.env_vars: dict[str, str] = os.environ.copy()
         self.env_vars["RUST_BACKTRACE"] = "1"
+        st = self.path.stat()
+        self.path.chmod(st.st_mode | stat.S_IEXEC)
 
     def call(self, args: list[str]) -> str:
         process = subprocess.run([str(self.path)] + args, capture_output=True, env=self.env_vars)
