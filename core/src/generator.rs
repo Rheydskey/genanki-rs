@@ -3,52 +3,40 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::anyhow;
 use gitpatch::Patch;
 use markdown::Options;
 
-use crate::data::{Card, DiffOutput, UpdateOutput};
+use crate::{
+    data::{Card, DiffOutput, UpdateOutput},
+    git::{Git, GitUpdate},
+};
 
 pub fn get_md_of_folder(path: &Path) -> Vec<PathBuf> {
-    let mut vec = Vec::new();
-    let Ok(entries) = std::fs::read_dir(path) else {
-        return Vec::new();
-    };
-
-    for i in entries {
-        let Ok(entry) = i else {
-            continue;
-        };
-
-        if !entry.file_type().unwrap().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        let extension = path.extension().map(|f| f.to_str().unwrap());
-
-        if !matches!(extension, Some("md")) {
-            continue;
-        }
-
-        vec.push(path);
-    }
-
-    vec
+    std::fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|dir_entry| dir_entry.file_type().map(|f| f.is_file()).unwrap_or(false))
+        .map(|f| f.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+        .collect()
 }
 
-pub struct CardGenerator(String);
+pub struct CardGenerator<'a>(String, &'a Path);
 
-impl CardGenerator {
-    pub const fn new(input: String) -> Self {
-        Self(input)
+impl<'a> CardGenerator<'a> {
+    pub const fn new(input: String, path: &'a Path) -> Self {
+        Self(input, path)
     }
 
-    fn to_html(input: &str) -> anyhow::Result<String> {
+    fn to_html(&self, input: &str) -> anyhow::Result<String> {
         let option = &Options {
             parse: markdown::ParseOptions {
                 constructs: markdown::Constructs {
                     character_escape: false,
                     character_reference: false,
+                    math_flow: true,
+                    math_text: true,
                     ..Default::default()
                 },
                 ..markdown::ParseOptions::gfm()
@@ -56,18 +44,19 @@ impl CardGenerator {
             compile: markdown::CompileOptions {
                 allow_dangerous_html: true,
                 allow_dangerous_protocol: true,
+                allow_any_img_src: true,
+                base64_path: Some(self.1.to_path_buf().parent().unwrap().to_path_buf()),
                 ..markdown::CompileOptions::gfm()
             },
         };
-
         let html =
             markdown::to_html_with_options(input, option).map_err(|f| anyhow::anyhow!("{f}"))?;
         Ok(html_escape::decode_html_entities(&html).into_owned())
     }
 
-    fn transform_to_html(card: Card) -> anyhow::Result<Card> {
-        let front = Self::to_html(&card.front)?;
-        let back = Self::to_html(&card.back)?;
+    fn transform_to_html(&self, card: Card) -> anyhow::Result<Card> {
+        let front = self.to_html(&card.front)?;
+        let back = self.to_html(&card.back)?;
         Ok(Card {
             front,
             back,
@@ -85,7 +74,8 @@ impl CardGenerator {
         let Some((front, back)) = self.0.split_once('%') else {
             return Err(anyhow::anyhow!("This card isn't extended"));
         };
-        Self::transform_to_html(Card {
+
+        self.transform_to_html(Card {
             front: front.to_string(),
             back: back.to_string(),
             hash: self.generate_hash(),
@@ -97,7 +87,7 @@ impl CardGenerator {
         let front = lines[0].to_string();
         let back = lines[1..].join("\n");
 
-        Self::transform_to_html(Card {
+        self.transform_to_html(Card {
             front,
             back,
             hash: self.generate_hash(),
@@ -130,15 +120,14 @@ impl Generator {
             offset += i.len();
         }
 
-        return &input[offset..];
+        &input[offset..]
     }
-    pub fn generate_card_from_input(input: &str) -> Vec<Card> {
+    pub fn generate_card_from_input(input: &str, path: &Path) -> Vec<Card> {
         Self::skip_until_first_card(input)
             .split("##")
             .filter(|f| !f.is_empty())
             .map(|f| format!("##{}", f.trim_end()))
-            .map(|f| CardGenerator::new(f).generate())
-            .flatten()
+            .flat_map(|f| CardGenerator::new(f, &path).generate())
             .collect::<Vec<_>>()
     }
     pub fn generate_card_from_folder(path: &Path) -> Vec<Card> {
@@ -146,7 +135,7 @@ impl Generator {
             .iter()
             .flat_map(|f| {
                 let content = std::fs::read_to_string(f).unwrap();
-                Self::generate_card_from_input(&content)
+                Self::generate_card_from_input(&content, f.as_path())
             })
             .collect()
     }
@@ -154,53 +143,13 @@ impl Generator {
 
 #[derive(Debug)]
 pub struct Updater {
-    repo: String,
+    git: Git,
 }
 
 impl Updater {
-    fn update(&self) -> anyhow::Result<(String, String)> {
-        let mut git = std::process::Command::new("git");
-        git.args(["pull"]);
-        git.current_dir(&self.repo);
-        let a = git.output()?;
-        // eprintln!("{a:?}");
-        let output = String::from_utf8(a.stdout)?;
-        let Some(first_line) = output.lines().nth(0) else {
-            return Err(anyhow::anyhow!("No output lines"));
-        };
-        let Some(words) = first_line.split(' ').next_back() else {
-            return Err(anyhow::anyhow!("Empty line"));
-        };
-
-        let Some((old, new)) = words.split_once("..") else {
-            return Err(anyhow!("Already update"));
-        };
-
-        Ok((old.to_string(), new.to_string()))
-    }
-    fn get_diff(&self, commit1: &str, commit2: &str) -> Option<String> {
-        let mut git = std::process::Command::new("git");
-        git.args([
-            "--no-pager",
-            "diff",
-            "-U1",
-            "--no-color",
-            &format!("{commit1}..{commit2}"),
-        ]);
-        git.current_dir(&self.repo);
-        let a = git.output().ok()?;
-        String::from_utf8(a.stdout).ok()
-    }
-
-    fn checkout(&self, commit: &str) {
-        let mut git = std::process::Command::new("git");
-        git.args(["--no-pager", "checkout", commit]);
-        git.current_dir(&self.repo);
-        git.status().unwrap();
-    }
-
-    pub const fn new(repo: String) -> Self {
-        Self { repo }
+    pub fn new(repo: String) -> Self {
+        let git = Git::new(repo);
+        Self { git }
     }
 
     fn root_folder_of_patch(path: &str) -> String {
@@ -221,10 +170,15 @@ impl Updater {
     }
 
     pub fn generate(&self) -> anyhow::Result<String> {
-        let (old, new) = self.update()?;
+        let GitUpdate {
+            from_commit,
+            to_commit,
+        } = self.git.update()?;
 
-        let Some(diff) = self.get_diff(&old, &new) else {
-            return Err(anyhow::anyhow!("Cannot get a diff between {old} and {new}"));
+        let Some(diff) = self.git.diff(&from_commit, &to_commit) else {
+            return Err(anyhow::anyhow!(
+                "Cannot get a diff between {from_commit} and {to_commit}"
+            ));
         };
         let Ok(patchs) = gitpatch::Patch::from_multiple(&diff) else {
             return Err(anyhow::anyhow!("Output diff is not correct"));
@@ -235,25 +189,28 @@ impl Updater {
             .flat_map(Self::get_folder_of_patch)
             .collect::<HashSet<String>>();
 
-        self.checkout(&old);
+        self.git.checkout(&from_commit)?;
 
         let mut old_cards: HashMap<String, HashSet<String>> = HashMap::new();
         for i in &decks {
-            let hashes: HashSet<String> =
-                Generator::generate_card_from_folder(Path::new(&format!("./{}/{i}", self.repo)))
-                    .iter()
-                    .map(|f| f.hash.clone())
-                    .collect();
+            let hashes: HashSet<String> = Generator::generate_card_from_folder(Path::new(
+                &format!("./{}/{i}", self.git.repo),
+            ))
+            .iter()
+            .map(|f| f.hash.clone())
+            .collect();
 
             old_cards.insert(i.clone(), hashes);
         }
 
-        self.checkout(&new);
+        self.git.checkout(&to_commit)?;
 
         let mut decks_cards: HashMap<String, Vec<_>> = HashMap::new();
         for i in &decks {
-            let cards =
-                Generator::generate_card_from_folder(Path::new(&format!("./{}/{i}", self.repo)));
+            let cards = Generator::generate_card_from_folder(Path::new(&format!(
+                "./{}/{i}",
+                self.git.repo
+            )));
 
             decks_cards.insert(i.clone(), cards);
         }

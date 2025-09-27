@@ -13,7 +13,7 @@ strip = true
 
 [dependencies]
 html-escape = "0.2.13" # Add a dep to correct a dep, we live in a beautiful world
-markdown = "1.0.0"
+markdown = {git = "https://github.com/Rheydskey/markdown-rs"}
 gitpatch = "0.7.1"
 argh = "0.1.13"
 serde = {version = "1", features = ["derive"]}

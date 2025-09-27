@@ -9,6 +9,7 @@ use crate::{
 
 mod data;
 mod generator;
+mod git;
 
 #[cfg(test)]
 mod test;
