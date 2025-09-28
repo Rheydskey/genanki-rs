@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(serde::Serialize, Clone, Debug)]
+#[derive(serde::Serialize, Clone, Debug, pyo3::IntoPyObject)]
 pub struct Card {
     pub front: String,
     pub back: String,
@@ -17,7 +17,7 @@ pub struct UpdateOutput {
     pub decks: HashMap<String, DiffOutput>,
 }
 
-#[derive(serde::Serialize, Clone, Debug, Default)]
+#[derive(serde::Serialize, Clone, Debug, Default, pyo3::IntoPyObject)]
 pub struct DiffOutput {
     pub added: Vec<Card>,
     /// Vec of hash

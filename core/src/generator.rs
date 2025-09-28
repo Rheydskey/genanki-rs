@@ -169,7 +169,7 @@ impl Updater {
         paths
     }
 
-    pub fn generate(&self) -> anyhow::Result<String> {
+    pub fn generate(&self) -> anyhow::Result<UpdateOutput> {
         let GitUpdate {
             from_commit,
             to_commit,
@@ -241,6 +241,6 @@ impl Updater {
                 .insert(deck.clone(), DiffOutput { added, deleted });
         }
 
-        Ok(serde_json::to_string(&output)?)
+        Ok(output)
     }
 }

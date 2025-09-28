@@ -88,7 +88,9 @@ pub fn init(init: &Init) -> anyhow::Result<String> {
 
 #[must_use]
 pub fn update(update: &Update) -> anyhow::Result<String> {
-    Updater::new(update.repo.clone()).generate()
+    Ok(serde_json::to_string(
+        &Updater::new(update.repo.clone()).generate()?,
+    )?)
 }
 
 fn main() {

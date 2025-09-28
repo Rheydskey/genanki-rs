@@ -10,8 +10,12 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+[lib]
+name = "gencore"
+crate-type = ["cdylib"]
 
 [dependencies]
+pyo3 = { version = "0.25.0", features = ["extension-module", "anyhow"] }
 html-escape = "0.2.13" # Add a dep to correct a dep, we live in a beautiful world
 markdown = {git = "https://github.com/Rheydskey/markdown-rs"}
 gitpatch = "0.7.1"

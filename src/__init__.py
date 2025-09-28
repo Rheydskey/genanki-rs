@@ -1,20 +1,16 @@
 from dataclasses import dataclass
 import hashlib
-import json
-import stat
-import subprocess
 import os
-from typing import Any
 from pathlib import Path
 from anki.collection import Collection
 from anki.decks import DeckId
 from aqt import mw
-
 from aqt import gui_hooks
 from aqt.operations import QueryOp
+from .gencore import init as gencore_init, update as gencore_update
+
 
 BASE_PATH = Path(__file__).parent
-
 static_html = """
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
@@ -48,8 +44,12 @@ class Card:
     hash: str
 
     @staticmethod
-    def from_json(json: dict[str, str]) -> "Card":
-        return Card(json["front"], json["back"], json["hash"])
+    def from_dict(dict_data: dict[str, str]) -> "Card":
+        return Card(dict_data["front"], dict_data["back"], dict_data["hash"])
+
+    @staticmethod
+    def from_list(list: list[dict[str, str]]) -> list["Card"]:
+        return [Card.from_dict(d) for d in list]
 
     def exists_in(self, did: DeckId, col: Collection) -> bool:
         query = f"hash:{self.hash} did:{did} "
@@ -61,11 +61,9 @@ class InitOutput:
     decks: dict[str, list[Card]]
 
     @staticmethod
-    def from_json(json_data: dict[str, Any]) -> "InitOutput":
-        decks: dict[str, list[Card]] = {}
-        for deck_name, cards_data in json_data["decks"].items():
-            decks[deck_name] = [Card.from_json(card_data) for card_data in cards_data]
-        return InitOutput(decks)
+    def from_dict(dict_data: dict[str, dict[str, str]]):
+        print(dict_data)
+        return InitOutput({k: Card.from_list(v) for (k, v) in dict_data.items()})
 
 
 @dataclass
@@ -74,11 +72,8 @@ class DiffOutput:
     deleted: list[str]
 
     @staticmethod
-    def from_json(json_data: dict[str, Any]) -> "DiffOutput":
-        return DiffOutput(
-            added=[Card.from_json(card_data) for card_data in json_data["added"]],
-            deleted=json_data["deleted"],
-        )
+    def from_dict(dict_data: dict[str, list[dict[str, str] | str]]):
+        return DiffOutput(Card.from_list(dict["added"]), dict_data["deleted"])
 
 
 @dataclass
@@ -86,35 +81,8 @@ class UpdateOutput:
     decks: dict[str, DiffOutput]
 
     @staticmethod
-    def from_json(json_data: dict[str, Any]) -> "UpdateOutput":
-        decks: dict[str, DiffOutput] = {}
-        for deck_name, diff_data in json_data["decks"].items():
-            decks[deck_name] = DiffOutput.from_json(diff_data)
-        return UpdateOutput(decks)
-
-
-class Gencore:
-    def __init__(self, path: Path | None = None):
-        self.path: Path = Path(BASE_PATH) / "gencore" if path is None else path
-        self.env_vars: dict[str, str] = os.environ.copy()
-        self.env_vars["RUST_BACKTRACE"] = "1"
-        st = self.path.stat()
-        self.path.chmod(st.st_mode | stat.S_IEXEC)
-
-    def call(self, args: list[str]) -> str:
-        process = subprocess.run(
-            [str(self.path)] + args, capture_output=True, env=self.env_vars
-        )
-        print(process.stderr.decode())
-        process.check_returncode()
-        return process.stdout.decode()
-
-    def init(self, url: str) -> str:
-        output_folder = folder_name(url)
-        return self.call(["init", url, output_folder])
-
-    def update(self, folder: str) -> str:
-        return self.call(["update", folder])
+    def from_dict(output: dict[str, dict[str, list[Card | str]]]):
+        return UpdateOutput({k: DiffOutput.from_dict(v) for (k, v) in output.items()})
 
 
 def create_model():
@@ -145,7 +113,7 @@ def add_cards(col: Collection, deck_id: DeckId, cards: list[Card]):
     for card in cards:
         if card.exists_in(deck_id, col):
             continue
-        
+
         note = col.new_note(model)
         note.fields[0] = card.front
         note.fields[1] = card.back
@@ -173,7 +141,6 @@ def create_or_get_deck_for_name(col: Collection, deck_name: str) -> DeckId:
 class Repository:
     def __init__(self, url: str, col: Collection):
         self.url: str = url
-        self.gencore: Gencore = Gencore()
         self.collection: Collection = col
 
     def manage(self) -> int:
@@ -188,8 +155,7 @@ class Repository:
         return 0
 
     def _create(self) -> None:
-        i = self.gencore.init(self.url)
-        decks = InitOutput.from_json(json.loads(i))
+        decks = InitOutput.from_dict(gencore_init(self.url, folder_name(git_repo)))
         for name, cards in decks.decks.items():
             deckid = create_or_get_deck_for_name(self.collection, name)
             add_cards(
@@ -199,11 +165,7 @@ class Repository:
             )
 
     def _update(self) -> None:
-        input = self.gencore.update(folder_name(git_repo))
-        if input == "":
-            return
-
-        decks: UpdateOutput = UpdateOutput.from_json(json.loads(input))
+        decks = UpdateOutput.from_dict(gencore_update(folder_name(git_repo)))
         for name, diff in decks.decks.items():
             deckid = create_or_get_deck_for_name(self.collection, name)
             delete_cards(self.collection, deckid, diff.deleted)
