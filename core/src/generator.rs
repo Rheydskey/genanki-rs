@@ -236,9 +236,7 @@ impl Updater {
                 .cloned()
                 .collect();
 
-            output
-                .decks
-                .insert(deck.clone(), DiffOutput { added, deleted });
+            output.insert(deck.clone(), DiffOutput { added, deleted });
         }
 
         Ok(output)

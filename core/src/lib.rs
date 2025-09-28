@@ -3,7 +3,7 @@ use std::{collections::HashMap, process::Stdio};
 use pyo3::prelude::*;
 
 use crate::{
-    data::{Card, DiffOutput},
+    data::{Card, InitOutput, UpdateOutput},
     generator::{Generator, Updater},
 };
 
@@ -12,7 +12,7 @@ mod generator;
 mod git;
 
 #[pyfunction]
-pub fn init(url: String, output_path: String) -> PyResult<HashMap<String, Vec<Card>>> {
+pub fn init(url: String, output_path: String) -> PyResult<InitOutput> {
     let git = std::process::Command::new("git")
         .args(["clone", "--depth", "1", &url, &output_path])
         .stdout(Stdio::piped())
@@ -48,8 +48,8 @@ pub fn init(url: String, output_path: String) -> PyResult<HashMap<String, Vec<Ca
 }
 
 #[pyfunction]
-pub fn update(path: String) -> PyResult<HashMap<String, DiffOutput>> {
-    Ok(Updater::new(path).generate()?.decks)
+pub fn update(path: String) -> PyResult<UpdateOutput> {
+    Ok(Updater::new(path).generate()?)
 }
 
 #[pymodule]
