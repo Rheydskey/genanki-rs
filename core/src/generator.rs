@@ -7,7 +7,7 @@ use gitpatch::Patch;
 use markdown::Options;
 
 use crate::{
-    data::{Card, DiffOutput, UpdateOutput},
+    data::{Card, DeckOutput, Output},
     git::{Git, GitUpdate},
 };
 
@@ -127,7 +127,7 @@ impl Generator {
             .split("##")
             .filter(|f| !f.is_empty())
             .map(|f| format!("##{}", f.trim_end()))
-            .flat_map(|f| CardGenerator::new(f, &path).generate())
+            .flat_map(|f| CardGenerator::new(f, path).generate())
             .collect::<Vec<_>>()
     }
     pub fn generate_card_from_folder(path: &Path) -> Vec<Card> {
@@ -169,7 +169,7 @@ impl Updater {
         paths
     }
 
-    pub fn generate(&self) -> anyhow::Result<UpdateOutput> {
+    pub fn generate(&self) -> anyhow::Result<Output> {
         let GitUpdate {
             from_commit,
             to_commit,
@@ -215,7 +215,7 @@ impl Updater {
             decks_cards.insert(i.clone(), cards);
         }
 
-        let mut output = UpdateOutput::default();
+        let mut output = Output::default();
 
         for (deck, cards) in &decks_cards {
             let new_cards_hash: HashSet<String> = cards.iter().map(|f| f.hash.clone()).collect();
@@ -236,7 +236,7 @@ impl Updater {
                 .cloned()
                 .collect();
 
-            output.insert(deck.clone(), DiffOutput { added, deleted });
+            output.insert(deck.clone(), DeckOutput { added, deleted });
         }
 
         Ok(output)

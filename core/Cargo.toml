@@ -20,4 +20,7 @@ html-escape = "0.2" # Add a dep to correct a dep, we live in a beautiful world
 markdown = {git = "https://github.com/Rheydskey/markdown-rs"}
 gitpatch = "0.7"
 blake3 = "1.8"
+serde = { version = "1.0", features=["derive"]}
+toml = "0.9.7"
+sha256 = "1.6.0"
 anyhow = "1"

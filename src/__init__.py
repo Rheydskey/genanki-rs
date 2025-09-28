@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import hashlib
 import os
 from pathlib import Path
 from anki.collection import Collection
@@ -7,10 +6,10 @@ from anki.decks import DeckId
 from aqt import mw
 from aqt import gui_hooks
 from aqt.operations import QueryOp
-from .gencore import init as gencore_init, update as gencore_update
+from .gencore import from_config
 
+BASE_PATH = Path(__file__).parent / "user_files"
 
-BASE_PATH = Path(__file__).parent
 static_html = """
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
@@ -28,13 +27,6 @@ static_html = """
     });
 </script>
 """
-
-ext_pwd = Path(os.path.dirname(__file__))
-git_repo: str = "https://git.rheydskey.org/rheydskey/l3-anki-md.git"
-
-
-def folder_name(url: str) -> str:
-    return hashlib.sha256(url.encode()).hexdigest()[0:6]
 
 
 @dataclass
@@ -57,32 +49,22 @@ class Card:
 
 
 @dataclass
-class InitOutput:
-    decks: dict[str, list[Card]]
-
-    @staticmethod
-    def from_dict(dict_data: dict[str, dict[str, str]]):
-        print(dict_data)
-        return InitOutput({k: Card.from_list(v) for (k, v) in dict_data.items()})
-
-
-@dataclass
-class DiffOutput:
+class DeckOutput:
     added: list[Card]
     deleted: list[str]
 
     @staticmethod
     def from_dict(dict_data: dict[str, list[dict[str, str] | str]]):
-        return DiffOutput(Card.from_list(dict["added"]), dict_data["deleted"])
+        return DeckOutput(Card.from_list(dict_data["added"]), dict_data["deleted"])
 
 
 @dataclass
-class UpdateOutput:
-    decks: dict[str, DiffOutput]
+class Output:
+    decks: dict[str, DeckOutput]
 
     @staticmethod
     def from_dict(output: dict[str, dict[str, list[Card | str]]]):
-        return UpdateOutput({k: DiffOutput.from_dict(v) for (k, v) in output.items()})
+        return Output({k: DeckOutput.from_dict(v) for (k, v) in output.items()})
 
 
 def create_model():
@@ -138,34 +120,22 @@ def create_or_get_deck_for_name(col: Collection, deck_name: str) -> DeckId:
     return deckid
 
 
-class Repository:
-    def __init__(self, url: str, col: Collection):
+def update_from_config() -> Output:
+    config_path = "./config.toml"
+    value = from_config(config_path)
+    return Output.from_dict(value)
+
+
+class Config:
+    def __init__(self, url: str, col: Collection) -> None:
         self.url: str = url
         self.collection: Collection = col
 
-    def manage(self) -> int:
+    def execute(self) -> int:
+        decks = update_from_config()
         if "Ankill" not in [n.name for n in self.collection.models.all_names_and_ids()]:
             self.collection.models.save(create_model())
 
-        if not Path(folder_name(git_repo)).exists():
-            self._create()
-        else:
-            self._update()
-
-        return 0
-
-    def _create(self) -> None:
-        decks = InitOutput.from_dict(gencore_init(self.url, folder_name(git_repo)))
-        for name, cards in decks.decks.items():
-            deckid = create_or_get_deck_for_name(self.collection, name)
-            add_cards(
-                self.collection,
-                deckid,
-                cards,
-            )
-
-    def _update(self) -> None:
-        decks = UpdateOutput.from_dict(gencore_update(folder_name(git_repo)))
         for name, diff in decks.decks.items():
             deckid = create_or_get_deck_for_name(self.collection, name)
             delete_cards(self.collection, deckid, diff.deleted)
@@ -175,19 +145,18 @@ class Repository:
                 diff.added,
             )
 
+        return 0
+
 
 def init() -> None:
-    os.chdir(ext_pwd)
-
+    os.chdir(BASE_PATH)
     mw.create_backup_now()
-
     op = QueryOp(
         parent=mw,
-        op=lambda col: Repository(git_repo, col).manage(),
+        op=lambda col: Config("./config.toml", col).execute(),
         success=lambda e: None,
     )
-
-    op.with_progress(label="Update git repo").run_in_background()
+    op.with_progress(label="Updating your decks...").run_in_background()
     mw.deckBrowser.refresh()
 
 
