@@ -35,8 +35,8 @@ impl<'a> CardGenerator<'a> {
                 constructs: markdown::Constructs {
                     character_escape: false,
                     character_reference: false,
-                    math_flow: true,
-                    math_text: true,
+                    math_flow: false,
+                    math_text: false,
                     ..Default::default()
                 },
                 ..markdown::ParseOptions::gfm()

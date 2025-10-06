@@ -1,15 +1,19 @@
-use crate::generator::CardGenerator;
+use std::io::Read;
+
+use crate::generator::{CardGenerator, Generator};
 
 #[test]
 pub fn test() {
-    let input = r#"## Cas 3 des récurrence par partition
-Pour
-$$ f(n) \in \Omega(n^{log_b a+\varepsilon}) $$
-Avec une certaine constante ε > 0.
-$$ t(n) < \in \Theta(f(n))$$"#;
-    let output = CardGenerator::new(input.to_string()).generate();
-    assert_eq!(
-        output.back,
-        "<p>Pour\n$$ f(n) \\in \\Omega(n^{log_b a+\\varepsilon}) $$\nAvec une certaine constante ε > 0.\n$$ t(n) < \\in \\Theta(f(n))$$</p>"
-    );
+    let path = std::path::Path::new("./tests/test.md");
+    let mut file = std::fs::File::open(path).unwrap();
+    let mut input = String::new();
+    file.read_to_string(&mut input).unwrap();
+    let output = Generator::generate_card_from_input(&input, &path);
+    let first = &output[0];
+    let second = &output[1];
+    assert_eq!(first.front, "<h2>Nya</h2>");
+    assert_eq!(first.back, r"<p>$ a \implies b $</p>");
+
+    assert_eq!(second.front, "<h2>Meow</h2>");
+    assert_eq!(second.back, r"<p>$$ a \implies b $$</p>");
 }

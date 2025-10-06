@@ -2,3 +2,5 @@ plugin.zip
 __pycache__/
 plugin/gencore
 a36bf7/
+src/gencore.so
+genanki-rs.ankiaddon

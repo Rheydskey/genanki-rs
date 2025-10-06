@@ -13,6 +13,9 @@ mod data;
 mod generator;
 mod git;
 
+#[cfg(test)]
+mod test;
+
 pub fn init(url: &str, output_path: &str, target_path: &Path) -> PyResult<Output> {
     let git = std::process::Command::new("git")
         .args(["clone", "--depth", "1", url, output_path])
