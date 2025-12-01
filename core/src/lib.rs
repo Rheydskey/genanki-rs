@@ -45,7 +45,10 @@ pub fn init(url: &str, output_path: &str, target_path: &Path) -> PyResult<Output
         decks.insert(
             name,
             DeckOutput {
-                added: Generator::generate_card_from_folder(path.path().as_path()),
+                added: Generator {
+                    project_path: path.path().as_path(),
+                }
+                .generate_card_from_folder(),
                 deleted: Vec::new(),
             },
         );

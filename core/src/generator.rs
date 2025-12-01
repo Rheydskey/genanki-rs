@@ -1,10 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Write,
+    io::Read,
     path::{Path, PathBuf},
 };
 
+use base64::{Engine, prelude::BASE64_STANDARD};
+use comrak::{
+    Arena, Options, create_formatter,
+    html::{ChildRendering, dangerous_url},
+    nodes::NodeValue,
+    parse_document,
+};
 use gitpatch::Patch;
-use markdown::Options;
+use percent_encoding::percent_decode_str;
 
 use crate::{
     data::{Card, DeckOutput, Output},
@@ -22,36 +31,117 @@ pub fn get_md_of_folder(path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-pub struct CardGenerator<'a>(String, &'a Path);
+struct CurrentPath<'a> {
+    project_path: &'a Path,
+    file_path: &'a Path,
+}
+
+pub fn render_to_base64<'a>(paths: &'a CurrentPath<'a>, url: &str) -> Option<String> {
+    let percent_decode = PathBuf::from(percent_decode_str(url).decode_utf8().ok()?.into_owned());
+    let joined_path = if percent_decode.is_absolute() {
+        paths
+            .project_path
+            .join(percent_decode.strip_prefix("/").unwrap())
+    } else {
+        paths.file_path.join(percent_decode)
+    };
+
+    let mut p = std::fs::File::open(&joined_path)
+        .inspect_err(|f| eprintln!("Warn on {joined_path:?}: {f}"))
+        .ok()?;
+    let mut vec = Vec::new();
+    p.read_to_end(&mut vec).unwrap();
+    let mimetype = infer::get(&vec).unwrap();
+    if !matches!(mimetype.matcher_type(), infer::MatcherType::Image) {
+        return None;
+    }
+    let a = BASE64_STANDARD.encode(&vec);
+    Some(format!("{};base64,{}", mimetype.mime_type(), a))
+}
+
+create_formatter!(CustomMath<&'a CurrentPath<'a>>, {
+    NodeValue::Math(ref node) => |context, entering| {
+        let fence = if node.display_math {
+            "$$"
+        } else {
+            "$"
+        };
+
+        if entering {
+            context.write_str(fence)?;
+            context.write_str(&node.literal)?;
+        } else {
+            context.write_str(fence)?;
+        }
+    },
+    NodeValue::Image(ref nl) => |context, node, entering| {
+        if entering {
+            if context.options.render.figure_with_caption {
+                context.write_str("<figure>")?;
+            }
+            context.write_str("<img")?;
+            if context.options.render.sourcepos {
+                let ast = node.data();
+                if ast.sourcepos.start.line > 0 {
+                    write!(context, " data-sourcepos=\"{}\"", ast.sourcepos)?;
+                }
+            }
+            context.write_str(" src=\"")?;
+            let url = &nl.url;
+            if context.options.render.r#unsafe || !dangerous_url(url) {
+                if let Some(base64) = render_to_base64(context.user, url) {
+                    context.write_str(&base64)?;
+                } else if let Some(rewriter) = &context.options.extension.image_url_rewriter {
+                    context.escape_href(&rewriter.to_html(&nl.url))?;
+                } else {
+                    context.escape_href(url)?;
+                }
+            }
+            context.write_str("\" alt=\"")?;
+            return Ok(ChildRendering::Plain);
+        } else {
+            if !nl.title.is_empty() {
+                context.write_str("\" title=\"")?;
+                context.escape(&nl.title)?;
+            }
+            context.write_str("\" />")?;
+            if context.options.render.figure_with_caption {
+                if !nl.title.is_empty() {
+                    context.write_str("<figcaption>")?;
+                    context.escape(&nl.title)?;
+                    context.write_str("</figcaption>")?;
+                }
+                context.write_str("</figure>")?;
+            };
+        }
+
+        return Ok(ChildRendering::HTML);
+    },
+});
+
+pub struct CardGenerator<'a>(String, &'a CurrentPath<'a>);
 
 impl<'a> CardGenerator<'a> {
-    pub const fn new(input: String, path: &'a Path) -> Self {
+    pub const fn new(input: String, path: &'a CurrentPath<'a>) -> Self {
         Self(input, path)
     }
 
     fn to_html(&self, input: &str) -> anyhow::Result<String> {
-        let option = &Options {
-            parse: markdown::ParseOptions {
-                constructs: markdown::Constructs {
-                    character_escape: false,
-                    character_reference: false,
-                    math_flow: false,
-                    math_text: false,
-                    ..Default::default()
-                },
-                ..markdown::ParseOptions::gfm()
+        let options = Options {
+            extension: comrak::options::Extension {
+                math_dollars: true,
+                math_code: true,
+                ..Default::default()
             },
-            compile: markdown::CompileOptions {
-                allow_dangerous_html: true,
-                allow_dangerous_protocol: true,
-                allow_any_img_src: true,
-                base64_path: Some(self.1.to_path_buf().parent().unwrap().to_path_buf()),
-                ..markdown::CompileOptions::gfm()
-            },
+            ..Default::default()
         };
-        let html =
-            markdown::to_html_with_options(input, option).map_err(|f| anyhow::anyhow!("{f}"))?;
-        Ok(html_escape::decode_html_entities(&html).into_owned())
+        let arena = Arena::new();
+        let document = parse_document(&arena, input, &options);
+        let mut output = String::new();
+
+        CustomMath::format_document(document, &options, &mut output, self.1)?;
+
+        Ok(output.trim().to_string())
     }
 
     fn transform_to_html(&self, card: Card) -> anyhow::Result<Card> {
@@ -107,9 +197,11 @@ impl<'a> CardGenerator<'a> {
     }
 }
 
-pub struct Generator;
+pub struct Generator<'a> {
+    pub project_path: &'a Path,
+}
 
-impl Generator {
+impl<'a> Generator<'a> {
     fn skip_until_first_card(input: &str) -> &str {
         let mut offset = 0;
         for i in input.lines() {
@@ -122,20 +214,30 @@ impl Generator {
 
         &input[offset..]
     }
-    pub fn generate_card_from_input(input: &str, path: &Path) -> Vec<Card> {
+    pub fn generate_card_from_input(&self, input: &str, path: &Path) -> Vec<Card> {
         Self::skip_until_first_card(input)
             .split("##")
-            .filter(|f| !f.is_empty())
+            .inspect(|f| println!("{:?}", f))
+            .filter(|f| !f.trim_end().is_empty())
             .map(|f| format!("##{}", f.trim_end()))
-            .flat_map(|f| CardGenerator::new(f, path).generate())
+            .flat_map(|f| {
+                CardGenerator::new(
+                    f,
+                    &CurrentPath {
+                        project_path: &self.project_path,
+                        file_path: path,
+                    },
+                )
+                .generate()
+            })
             .collect::<Vec<_>>()
     }
-    pub fn generate_card_from_folder(path: &Path) -> Vec<Card> {
-        get_md_of_folder(path)
+    pub fn generate_card_from_folder(&self) -> Vec<Card> {
+        get_md_of_folder(self.project_path)
             .iter()
             .flat_map(|f| {
                 let content = std::fs::read_to_string(f).unwrap();
-                Self::generate_card_from_input(&content, f.as_path())
+                self.generate_card_from_input(&content, f.as_path())
             })
             .collect()
     }
@@ -193,9 +295,10 @@ impl Updater {
 
         let mut old_cards: HashMap<String, HashSet<String>> = HashMap::new();
         for i in &decks {
-            let hashes: HashSet<String> = Generator::generate_card_from_folder(Path::new(
-                &format!("./{}/{i}", self.git.repo),
-            ))
+            let hashes: HashSet<String> = Generator {
+                project_path: Path::new(&format!("./{}/{i}", self.git.repo)),
+            }
+            .generate_card_from_folder()
             .iter()
             .map(|f| f.hash.clone())
             .collect();
@@ -207,10 +310,10 @@ impl Updater {
 
         let mut decks_cards: HashMap<String, Vec<_>> = HashMap::new();
         for i in &decks {
-            let cards = Generator::generate_card_from_folder(Path::new(&format!(
-                "./{}/{i}",
-                self.git.repo
-            )));
+            let cards = Generator {
+                project_path: Path::new(&format!("./{}/{i}", self.git.repo)),
+            }
+            .generate_card_from_folder();
 
             decks_cards.insert(i.clone(), cards);
         }
