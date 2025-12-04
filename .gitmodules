@@ -1,0 +1,3 @@
+[submodule "core/core/tests/fake_repo"]
+	path = core/core/tests/fake_repo
+	url = https://github.com/Rheydskey/genanki-rs-dummy-repo.git
