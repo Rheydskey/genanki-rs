@@ -9,9 +9,8 @@ pub fn get_fake_repo() -> FakeRepo {
 #[rstest]
 pub fn test_folder_diff(get_fake_repo: FakeRepo) {
     let repo_path = get_fake_repo.0.path().to_str().unwrap().to_string();
-    let a = Updater::new(repo_path.clone());
     let diff = Git::new(repo_path).diff("55974ad", "d60481d").unwrap();
-    let folders = a.get_folder_with_diff(&diff).unwrap();
+    let folders = Updater::get_folder_with_diff(&diff).unwrap();
     assert!(folders.contains("basic_cards"));
 }
 
@@ -21,7 +20,7 @@ pub fn test_generation(get_fake_repo: FakeRepo) {
     let a = Updater::new(repo_path.clone());
     let diff = Git::new(repo_path).diff("55974ad", "d60481d").unwrap();
     let decks = a
-        .generate_decks_from_diff(diff, "55974ad", "d60481d")
+        .generate_decks_from_diff(&diff, "55974ad", "d60481d")
         .unwrap();
     assert_eq!(
         decks.get("basic_cards").unwrap().added[0].hash,
@@ -32,9 +31,8 @@ pub fn test_generation(get_fake_repo: FakeRepo) {
 #[rstest]
 pub fn test_new_subdecks_folder_diff(get_fake_repo: FakeRepo) {
     let repo_path = get_fake_repo.0.path().to_str().unwrap().to_string();
-    let a = Updater::new(repo_path.clone());
     let diff = Git::new(repo_path).diff("d60481d", "54012ee").unwrap();
-    let folders = a.get_folder_with_diff(&diff).unwrap();
+    let folders = Updater::get_folder_with_diff(&diff).unwrap();
     assert!(folders.contains("basic_cards/subdecks"));
 }
 
@@ -44,7 +42,7 @@ pub fn test_new_subdecks_diff_output(get_fake_repo: FakeRepo) {
     let a = Updater::new(repo_path.clone());
     let diff = Git::new(repo_path).diff("d60481d", "54012ee").unwrap();
     let g = a
-        .generate_decks_from_diff(diff, "d60481d", "54012ee")
+        .generate_decks_from_diff(&diff, "d60481d", "54012ee")
         .unwrap();
 
     eprintln!("{g:?}");

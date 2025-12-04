@@ -51,7 +51,7 @@ impl<'a> CardGenerator<'a> {
         hasher.finalize().to_hex().as_str().to_string()
     }
 
-    fn split_extend(&self) -> anyhow::Result<(String, String)> {
+    fn split_extended(&self) -> anyhow::Result<(String, String)> {
         let Some((front, back)) = self.content.split_once('%') else {
             return Err(anyhow::anyhow!("This card isn't extended"));
         };
@@ -73,7 +73,7 @@ impl<'a> CardGenerator<'a> {
 
     pub fn generate(&self) -> anyhow::Result<Card> {
         let (front, back) = if self.is_extends() {
-            self.split_extend()?
+            self.split_extended()?
         } else {
             self.split_basic()?
         };
@@ -123,7 +123,7 @@ impl Generator<'_> {
                 CardGenerator::new(
                     f,
                     &CurrentPath {
-                        project_path: &self.subproject_path,
+                        project_path: self.subproject_path,
                         file_path: path,
                     },
                 )

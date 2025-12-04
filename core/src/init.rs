@@ -16,7 +16,7 @@ pub struct Init<'a> {
 }
 
 impl<'a> Init<'a> {
-    pub fn new(url: &'a str, output_path: &'a str, target_path: &'a Path) -> Self {
+    pub const fn new(url: &'a str, output_path: &'a str, target_path: &'a Path) -> Self {
         Self {
             url,
             output_path,
@@ -32,8 +32,7 @@ impl<'a> Init<'a> {
         check_path.insert(canonic.clone());
         s.push(canonic.clone());
 
-        while !s.is_empty() {
-            let path = s.pop().unwrap();
+        while let Some(path) = s.pop() {
             for path in std::fs::read_dir(path).unwrap().flatten() {
                 if !path.file_type()?.is_dir() {
                     continue;
@@ -58,7 +57,7 @@ impl<'a> Init<'a> {
 
         Ok(check_path
             .into_iter()
-            .filter_map(|f| f.strip_prefix(&canonic).map(|f| f.to_path_buf()).ok())
+            .filter_map(|f| f.strip_prefix(&canonic).map(Path::to_path_buf).ok())
             .collect())
     }
 
@@ -81,9 +80,9 @@ impl<'a> Init<'a> {
     pub fn generate(&self) -> anyhow::Result<Output> {
         let mut decks: Output = HashMap::new();
         for path in self.get_subdecks_path()? {
-            let name = path.to_str().unwrap().replace("/", "::");
+            let name = path.to_str().unwrap().replace('/', "::");
             decks.insert(
-                name.to_string(),
+                name,
                 DeckOutput {
                     added: Generator {
                         subproject_path: self.target_path.join(path.as_path()).as_path(),

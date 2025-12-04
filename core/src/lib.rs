@@ -32,7 +32,7 @@ pub fn from_config(path: String) -> PyResult<Output> {
     for (name, repo) in &config.repo {
         let slug = repo.get_slug();
         let url = repo.get_url();
-        let root_deck_name = repo.get_custom_deck_name().unwrap_or(name.clone());
+        let root_deck_name = repo.get_custom_deck_name().unwrap_or_else(|| name.clone());
         let subfolder = repo.get_subfolder();
         let repo_folder = std::path::Path::new(&slug);
 
@@ -42,7 +42,7 @@ pub fn from_config(path: String) -> PyResult<Output> {
                 output.insert(format!("{root_deck_name}::{decks}"), cards);
             }
         } else {
-            let values = init(&url, &slug, &repo_folder.join(subfolder))?;
+            let values = init(url, &slug, &repo_folder.join(subfolder))?;
             for (decks, cards) in values {
                 output.insert(format!("{root_deck_name}::{decks}"), cards);
             }

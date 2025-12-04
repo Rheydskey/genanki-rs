@@ -6,7 +6,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_file(path: String) -> anyhow::Result<Config> {
+    pub fn from_file(path: String) -> anyhow::Result<Self> {
         let mut file = std::fs::File::open(path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
@@ -28,15 +28,15 @@ pub enum Repo {
 }
 
 impl Repo {
-    pub fn get_url(&self) -> &String {
+    pub const fn get_url(&self) -> &String {
         match self {
-            Repo::SimpleUrl(url) | Repo::Object { url, .. } => url,
+            Self::SimpleUrl(url) | Self::Object { url, .. } => url,
         }
     }
 
     pub fn get_slug(&self) -> String {
         let digest = match self {
-            Repo::SimpleUrl(url) | Repo::Object { url, .. } => sha256::digest(url),
+            Self::SimpleUrl(url) | Self::Object { url, .. } => sha256::digest(url),
         };
 
         digest[0..6].to_string()
@@ -44,15 +44,15 @@ impl Repo {
 
     pub fn get_custom_deck_name(&self) -> Option<String> {
         match self {
-            Repo::Object { deck_name, .. } => deck_name.clone(),
-            Repo::SimpleUrl(_) => None,
+            Self::Object { deck_name, .. } => deck_name.clone(),
+            Self::SimpleUrl(_) => None,
         }
     }
 
     pub fn get_subfolder(&self) -> String {
         match self {
-            Repo::SimpleUrl(_) => String::new(),
-            Repo::Object { target, .. } => target.clone().unwrap_or_default(),
+            Self::SimpleUrl(_) => String::new(),
+            Self::Object { target, .. } => target.clone().unwrap_or_default(),
         }
     }
 }

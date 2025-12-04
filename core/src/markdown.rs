@@ -18,9 +18,7 @@ pub fn render_to_base64<'a>(paths: &'a CurrentPath<'a>, url: &str) -> Option<Str
         paths.file_path.join(percent_decode)
     };
 
-    let mut p = std::fs::File::open(&joined_path)
-        .inspect_err(|f| eprintln!("Warn on {joined_path:?}: {f}"))
-        .ok()?;
+    let mut p = std::fs::File::open(&joined_path).ok()?;
 
     let mut vec = Vec::new();
     p.read_to_end(&mut vec).ok()?;

@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
 };
 
@@ -27,12 +27,12 @@ impl Updater {
 
     fn root_folder_of_patch(path: &str) -> String {
         let mut path = PathBuf::from_str(path).unwrap();
-        if path.starts_with("a") {
-            path = path.strip_prefix("a").unwrap().to_path_buf();
+        if path.starts_with("a/") {
+            path = path.strip_prefix("a/").unwrap().to_path_buf();
         }
 
-        if path.starts_with("b") {
-            path = path.strip_prefix("b").unwrap().to_path_buf();
+        if path.starts_with("b/") {
+            path = path.strip_prefix("b/").unwrap().to_path_buf();
         }
 
         path.parent().unwrap().to_str().unwrap().to_string()
@@ -51,8 +51,8 @@ impl Updater {
         paths
     }
 
-    pub fn get_folder_with_diff(&self, diff: &String) -> anyhow::Result<HashSet<String>> {
-        let Ok(patchs) = gitpatch::Patch::from_multiple(&diff) else {
+    pub fn get_folder_with_diff(diff: &str) -> anyhow::Result<HashSet<String>> {
+        let Ok(patchs) = gitpatch::Patch::from_multiple(diff) else {
             return Err(anyhow::anyhow!("Output diff is not correct"));
         };
 
@@ -69,7 +69,7 @@ impl Updater {
         updated_folder: &HashSet<String>,
         from_commit: &str,
     ) -> anyhow::Result<HashMap<String, HashSet<String>>> {
-        self.git.checkout(&from_commit)?;
+        self.git.checkout(from_commit)?;
 
         let mut old_cards: HashMap<String, HashSet<String>> = HashMap::new();
         for i in updated_folder {
@@ -92,11 +92,10 @@ impl Updater {
         updated_folder: &HashSet<String>,
         to_commit: &str,
     ) -> anyhow::Result<HashMap<String, Vec<Card>>> {
-        self.git.checkout(&to_commit)?;
+        self.git.checkout(to_commit)?;
 
         let mut decks_cards = HashMap::new();
         for i in updated_folder {
-            eprintln!("{:?}", self.repo_path.join(i).as_path());
             let cards = Generator {
                 subproject_path: self.repo_path.join(i).as_path(),
             }
@@ -105,16 +104,16 @@ impl Updater {
             decks_cards.insert(i.clone(), cards);
         }
 
-        return Ok(decks_cards);
+        Ok(decks_cards)
     }
 
     pub fn generate_decks_from_diff(
         &self,
-        diff: String,
+        diff: &str,
         from_commit: &str,
         to_commit: &str,
     ) -> anyhow::Result<Output> {
-        let updated_folder = self.get_folder_with_diff(&diff)?;
+        let updated_folder = Self::get_folder_with_diff(diff)?;
         let cards_from_commit = self.get_card_of_from_commit(&updated_folder, from_commit)?;
         let cards_to_commit = self.get_cards_of_to_commit(&updated_folder, to_commit)?;
 
@@ -157,6 +156,6 @@ impl Updater {
             ));
         };
 
-        self.generate_decks_from_diff(diff, &from_commit, &to_commit)
+        self.generate_decks_from_diff(&diff, &from_commit, &to_commit)
     }
 }
