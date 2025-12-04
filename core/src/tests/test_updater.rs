@@ -48,7 +48,7 @@ pub fn test_new_subdecks_diff_output(get_fake_repo: FakeRepo) {
     eprintln!("{g:?}");
 
     assert_eq!(
-        g.get("basic_cards/subdecks").unwrap().added[0].hash,
+        g.get("basic_cards::subdecks").unwrap().added[0].hash,
         "87588180b9688dab251cccca1ab23c377ea998e21a158e250772a5b770b1e098"
     );
 }

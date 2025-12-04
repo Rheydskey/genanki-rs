@@ -119,9 +119,9 @@ impl Updater {
 
         let mut output = Output::default();
 
-        for (deck, cards) in &cards_to_commit {
+        for (deck_path, cards) in &cards_to_commit {
             let new_cards_hash: HashSet<String> = cards.iter().map(|f| f.hash.clone()).collect();
-            let Some(old_deck) = cards_from_commit.get(deck) else {
+            let Some(old_deck) = cards_from_commit.get(deck_path) else {
                 continue;
             };
 
@@ -138,7 +138,10 @@ impl Updater {
                 .cloned()
                 .collect();
 
-            output.insert(deck.clone(), DeckOutput { added, deleted });
+            output.insert(
+                deck_path.replace('/', "::").clone(),
+                DeckOutput { added, deleted },
+            );
         }
 
         Ok(output)
