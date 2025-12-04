@@ -1,61 +1,23 @@
-use std::{collections::HashMap, path::Path, process::Stdio};
-
 use pyo3::prelude::*;
+use std::path::Path;
 
-use crate::{
-    config::Config,
-    data::{DeckOutput, Output},
-    generator::{Generator, Updater},
-};
+use crate::{config::Config, data::Output, init::Init, updater::Updater};
 
 mod config;
 mod data;
 mod generator;
 mod git;
+mod init;
 mod markdown;
+mod updater;
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 pub fn init(url: &str, output_path: &str, target_path: &Path) -> PyResult<Output> {
-    let git = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", url, output_path])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()?;
-    eprintln!("{}", String::from_utf8(git.stdout)?);
-    eprintln!("{}", String::from_utf8(git.stderr)?);
-    let mut decks: Output = HashMap::new();
-
-    for path in std::fs::read_dir(target_path)? {
-        let Ok(path) = path else {
-            continue;
-        };
-
-        if !path.file_type()?.is_dir() {
-            continue;
-        }
-
-        let Ok(name) = path.file_name().into_string() else {
-            continue;
-        };
-
-        if name.starts_with('.') {
-            continue;
-        }
-        decks.insert(
-            name,
-            DeckOutput {
-                added: Generator {
-                    project_path: path.path().as_path(),
-                }
-                .generate_card_from_folder(),
-                deleted: Vec::new(),
-            },
-        );
-    }
-
-    Ok(decks)
+    let init = Init::new(url, output_path, target_path);
+    init.git_clone()?;
+    Ok(init.generate()?)
 }
 
 #[pyfunction]

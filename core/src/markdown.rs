@@ -13,7 +13,7 @@ pub fn render_to_base64<'a>(paths: &'a CurrentPath<'a>, url: &str) -> Option<Str
     let joined_path = if percent_decode.is_absolute() {
         paths
             .project_path
-            .join(percent_decode.strip_prefix("/").unwrap())
+            .join(percent_decode.strip_prefix("/").ok()?)
     } else {
         paths.file_path.join(percent_decode)
     };
@@ -23,9 +23,9 @@ pub fn render_to_base64<'a>(paths: &'a CurrentPath<'a>, url: &str) -> Option<Str
         .ok()?;
 
     let mut vec = Vec::new();
-    p.read_to_end(&mut vec).unwrap();
+    p.read_to_end(&mut vec).ok()?;
 
-    let mimetype = infer::get(&vec).unwrap();
+    let mimetype = infer::get(&vec)?;
 
     if !matches!(mimetype.matcher_type(), infer::MatcherType::Image) {
         return None;
@@ -46,11 +46,9 @@ create_formatter!(CustomMath<&'a CurrentPath<'a>>, {
             "$"
         };
 
+        context.write_str(fence)?;
         if entering {
-            context.write_str(fence)?;
             context.write_str(&node.literal)?;
-        } else {
-            context.write_str(fence)?;
         }
     },
     NodeValue::Image(ref nl) => |context, node, entering| {
@@ -78,20 +76,19 @@ create_formatter!(CustomMath<&'a CurrentPath<'a>>, {
             }
             context.write_str("\" alt=\"")?;
             return Ok(ChildRendering::Plain);
-        } else {
+        }
+        if !nl.title.is_empty() {
+            context.write_str("\" title=\"")?;
+            context.escape(&nl.title)?;
+        }
+        context.write_str("\" />")?;
+        if context.options.render.figure_with_caption {
             if !nl.title.is_empty() {
-                context.write_str("\" title=\"")?;
+                context.write_str("<figcaption>")?;
                 context.escape(&nl.title)?;
+                context.write_str("</figcaption>")?;
             }
-            context.write_str("\" />")?;
-            if context.options.render.figure_with_caption {
-                if !nl.title.is_empty() {
-                    context.write_str("<figcaption>")?;
-                    context.escape(&nl.title)?;
-                    context.write_str("</figcaption>")?;
-                }
-                context.write_str("</figure>")?;
-            };
+            context.write_str("</figure>")?;
         }
 
         return Ok(ChildRendering::HTML);
