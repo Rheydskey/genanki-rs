@@ -1,11 +1,8 @@
-use std::{
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{io::Read, path::Path};
 
 use rstest::{fixture, rstest};
 
-use crate::generator::{CardGenerator, Generator};
+use crate::generator::Generator;
 
 #[fixture]
 pub fn get_test_folder<'a>() -> &'static Path {
@@ -18,7 +15,7 @@ pub fn test(get_test_folder: &Path) {
     let mut input = String::new();
     file.read_to_string(&mut input).unwrap();
     let output = Generator {
-        project_path: get_test_folder,
+        subproject_path: get_test_folder,
     }
     .generate_card_from_input(&input, get_test_folder);
     let first = &output[0];
@@ -50,7 +47,7 @@ pub fn test_output(
     #[case] back: &str,
 ) {
     let output = Generator {
-        project_path: get_test_folder,
+        subproject_path: get_test_folder,
     }
     .generate_card_from_input(&input, get_test_folder);
     let first = &output[0];
@@ -69,7 +66,7 @@ $$ Blahaj\<Shark> > boykisser\<Cat> $$
     "#;
 
     let output = Generator {
-        project_path: get_test_folder,
+        subproject_path: get_test_folder,
     }
     .generate_card_from_input(&input, get_test_folder);
     println!("{:#?}", output);
@@ -92,7 +89,7 @@ pub fn test_image_base64(get_test_folder: &Path) {
 ![title](blahaj.png)
     "#;
     let output = Generator {
-        project_path: get_test_folder,
+        subproject_path: get_test_folder,
     }
     .generate_card_from_input(&input, get_test_folder);
     println!("{:#?}", output);
@@ -111,7 +108,7 @@ pub fn test_absolute_path_image_base64(get_test_folder: &Path) {
 ![title](/blahaj.png)
     "#;
     let output = Generator {
-        project_path: get_test_folder,
+        subproject_path: get_test_folder,
     }
     .generate_card_from_input(&input, get_test_folder);
     println!("{:#?}", output);
