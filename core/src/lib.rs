@@ -12,6 +12,7 @@ mod config;
 mod data;
 mod generator;
 mod git;
+mod markdown;
 
 #[cfg(test)]
 mod test;

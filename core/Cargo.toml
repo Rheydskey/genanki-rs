@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.26", features = ["extension-module", "anyhow"] }
-comrak = { version = "0.48.0", optional=false}
+comrak = { version = "0.48.0", optional=false, default-features = false }
 gitpatch = "0.7"
 blake3 = "1.8"
 serde = { version = "1.0", features=["derive"]}
